@@ -1,8 +1,7 @@
 /*
  * adxl355.h
  *
- *  Created on: 18 июня 2018 г.
- *      Author: Антон
+ *      Author: OrbitalBoson
  */
 
 #ifndef ADXL355_H_
