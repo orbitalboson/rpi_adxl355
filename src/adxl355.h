@@ -52,10 +52,30 @@
 
 #define ADXL355_RESET_CODE		0x52
 
+#define ADXL355_TEMP_NOMINAL_LSB		1852
+#define ADXL355_TEMP_NOMINAL_CELSIUS		25
+#define ADXL355_TEMP_NOMINAL_CELSIUS_SLOPE	9.05f
+
+#define ADXL355_STATUS_DATA_RDY 	1
+#define ADXL355_STATUS_FIFO_FULL 	2
+#define ADXL355_STATUS_FIFO_OVR 	4
+#define ADXL355_STATUS_ACTIVITY 	8
+#define ADXL355_STATUS_NVM_BUSY 	16
+
+#define ADXL355_COMMAND_PREPARED	0x01
+
+#define ADXL355_OK			0
+#define ADXL355_ERROR			-1
+
 #define _reg_write(REG) (REG << 1 | 0x00)
 #define _reg_read(REG) 	(REG << 1 | 0x01)
+#define ADXL355_REG_WRITE(REG) (REG << 1 | 0x00)
+#define ADXL355_REG_READ(REG) (REG << 1 | 0x01)
 
-#define _adxl355_spi_write(spi, data, result, len) adxl355_wpi_spi_write(spi, data, result, len)
+#define _clear_command(COMMAND) memset((void *)COMMAND, 0, sizeof(ADXL355Command))
+
+#define ADXL355_SPI_WRITE(handler, data, result, len) adxl355_wpi_spi_write(handler, data, result, len)
+#define ADXL355_I2C_WRITE(handler, data, result, len) adxl355_wpi_i2c_write(handler, data, result, len)
 
 typedef struct {
   int channel;
@@ -63,23 +83,56 @@ typedef struct {
 } ADXL355_SPI;
 
 typedef struct {
+  unsigned spi : 1;
+  unsigned i2c : 1;
+  int fd;
+  int spi_channel;
+  int speed;
+} ADXL355_HANDLER;
+
+
+typedef struct {
+  uint32_t x;
+  uint32_t y;
+  uint32_t z;
+} ADXL355_ACCEL_DATA;
+
+typedef struct {
+  uint16_t raw;
+  float celsius;
+} ADXL355_TEMPERATURE;
+
+typedef struct {
   uint8_t reg;
   uint8_t status;
   uint8_t data[16];
-  uint8_t _prepared[16];
-  uint8_t result[16];
+  uint8_t prepared[16];
+  uint8_t raw_result[16];
+  union {
+    ADXL355_ACCEL_DATA acceleration;
+    ADXL355_TEMPERATURE temperature;
+    uint8_t status;
+  } result;
   size_t len;
 } ADXL355Command;
 
-void adxl355_prepare_command(ADXL355Command * cmd);
 void adxl355_print_command_result(ADXL355Command * cmd);
-int adxl355_execute_command(ADXL355_SPI * spi, ADXL355Command * cmd);
-int adxl355_wpi_spi_write(ADXL355_SPI * spi, uint8_t * data, uint8_t * result, size_t len);
-int adxl355_another_spi_write(ADXL355_SPI * spi, uint8_t * data, uint8_t * result, size_t len);
-int adxl355_get_devid_ad(ADXL355_SPI * spi, ADXL355Command * cmd);
-int adxl355_get_devid_mst(ADXL355_SPI * spi);
-int adxl355_get_partid(ADXL355_SPI * spi);
-int adxl355_get_revid(ADXL355_SPI * spi);
-int adxl355_reset(ADXL355_SPI * spi);
+void adxl355_print_status(uint8_t status);
+
+void adxl355_prepare_command(ADXL355Command * cmd);
+int adxl355_execute_command(ADXL355_HANDLER * handler, ADXL355Command * cmd);
+int adxl355_wpi_spi_write(ADXL355_HANDLER * handler, uint8_t * data, uint8_t * result, size_t len);
+int adxl355_wpi_i2c_write(ADXL355_HANDLER * handler, uint8_t * data, uint8_t * result, size_t len);
+int adxl355_another_spi_write(ADXL355_HANDLER * handler, uint8_t * data, uint8_t * result, size_t len);
+
+int adxl355_get_devid_ad(ADXL355_HANDLER * handler, uint8_t * b);
+int adxl355_get_devid_mst(ADXL355_HANDLER * handler, uint8_t * b);
+int adxl355_get_partid(ADXL355_HANDLER * handler, uint8_t * b);
+int adxl355_get_revid(ADXL355_HANDLER * handler, uint8_t * b);
+int adxl355_get_status(ADXL355_HANDLER * handler, ADXL355Command * cmd);
+int adxl355_read_temperature(ADXL355_HANDLER * handler, ADXL355Command * cmd);
+int adxl355_read_acceleration(ADXL355_HANDLER * handler, ADXL355Command * cmd);
+int adxl355_measurement_mode(ADXL355_HANDLER * handler, ADXL355Command * cmd);
+int adxl355_reset(ADXL355_HANDLER * handler, ADXL355Command * cmd);
 
 #endif /* ADXL355_H_ */
