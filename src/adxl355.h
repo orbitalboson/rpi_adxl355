@@ -8,10 +8,12 @@
 #define ADXL355_H_
 
 #include <string.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <sys/types.h>
 
+#include <wiringPi.h>
 #include <wiringPiSPI.h>
 
 #define ADXL355_REG_DEVID_AD		0x00
@@ -55,6 +57,7 @@
 #define ADXL355_TEMP_NOMINAL_LSB		1852
 #define ADXL355_TEMP_NOMINAL_CELSIUS		25
 #define ADXL355_TEMP_NOMINAL_CELSIUS_SLOPE	9.05f
+#define ADXL355_TEMP_C_TO_F_CONST		9.0f / 5.0f
 
 #define ADXL355_STATUS_DATA_RDY 	1
 #define ADXL355_STATUS_FIFO_FULL 	2
@@ -62,25 +65,22 @@
 #define ADXL355_STATUS_ACTIVITY 	8
 #define ADXL355_STATUS_NVM_BUSY 	16
 
+#define ADXL355_FIFO_MAX_COUNT		96
+#define FIFO_STREAM_OVR_BREAK		0x01
+#define FIFO_STREAM_FIFO_READ_BREAK	0x02
+
 #define ADXL355_COMMAND_PREPARED	0x01
 
 #define ADXL355_OK			0
 #define ADXL355_ERROR			-1
+#define ADXL355_FIFO_READ_ERROR		-10
+#define ADXL355_FIFO_STREAM_ERROR	-20
 
-#define _reg_write(REG) (REG << 1 | 0x00)
-#define _reg_read(REG) 	(REG << 1 | 0x01)
 #define ADXL355_REG_WRITE(REG) (REG << 1 | 0x00)
 #define ADXL355_REG_READ(REG) (REG << 1 | 0x01)
 
-#define _clear_command(COMMAND) memset((void *)COMMAND, 0, sizeof(ADXL355Command))
-
 #define ADXL355_SPI_WRITE(handler, data, result, len) adxl355_wpi_spi_write(handler, data, result, len)
 #define ADXL355_I2C_WRITE(handler, data, result, len) adxl355_wpi_i2c_write(handler, data, result, len)
-
-typedef struct {
-  int channel;
-  int speed;
-} ADXL355_SPI;
 
 typedef struct {
   unsigned spi : 1;
@@ -90,34 +90,52 @@ typedef struct {
   int speed;
 } ADXL355_HANDLER;
 
+typedef struct {
+  unsigned NVM_BUSY : 1;
+  unsigned ACTIVITY : 1;
+  unsigned FIFO_OVR : 1;
+  unsigned FIFO_FULL : 1;
+  unsigned DATA_RDY : 1;
+} ADXL355Status;
+
+typedef struct {
+  ADXL355Status status;
+  uint8_t fifo_entries;
+} ADXL355StatusAndFifo;
+
+typedef struct {
+  uint16_t raw;
+  float celsius;
+  float kelvin;
+  float fahrenheit;
+} ADXL355Temperature;
 
 typedef struct {
   uint32_t x;
   uint32_t y;
   uint32_t z;
-} ADXL355_ACCEL_DATA;
+} ADXL355Acceleration;
 
 typedef struct {
-  uint16_t raw;
-  float celsius;
-} ADXL355_TEMPERATURE;
+  ADXL355Acceleration data[ADXL355_FIFO_MAX_COUNT / 3];
+  uint8_t samples;
+  uint8_t empty_read_index;
+  uint8_t x_marker_error_index;
+  unsigned empty_read : 1;
+  unsigned x_marker_error : 1;
+} ADXL355Fifo;
 
 typedef struct {
   uint8_t reg;
   uint8_t status;
-  uint8_t data[16];
-  uint8_t prepared[16];
-  uint8_t raw_result[16];
-  union {
-    ADXL355_ACCEL_DATA acceleration;
-    ADXL355_TEMPERATURE temperature;
-    uint8_t status;
-  } result;
+  uint8_t data[512];
+  uint8_t prepared[512];
+  uint8_t raw_result[512];
   size_t len;
 } ADXL355Command;
 
 void adxl355_print_command_result(ADXL355Command * cmd);
-void adxl355_print_status(uint8_t status);
+void adxl355_print_status(ADXL355Status * status);
 
 void adxl355_prepare_command(ADXL355Command * cmd);
 int adxl355_execute_command(ADXL355_HANDLER * handler, ADXL355Command * cmd);
@@ -129,10 +147,16 @@ int adxl355_get_devid_ad(ADXL355_HANDLER * handler, uint8_t * b);
 int adxl355_get_devid_mst(ADXL355_HANDLER * handler, uint8_t * b);
 int adxl355_get_partid(ADXL355_HANDLER * handler, uint8_t * b);
 int adxl355_get_revid(ADXL355_HANDLER * handler, uint8_t * b);
-int adxl355_get_status(ADXL355_HANDLER * handler, ADXL355Command * cmd);
-int adxl355_read_temperature(ADXL355_HANDLER * handler, ADXL355Command * cmd);
-int adxl355_read_acceleration(ADXL355_HANDLER * handler, ADXL355Command * cmd);
-int adxl355_measurement_mode(ADXL355_HANDLER * handler, ADXL355Command * cmd);
-int adxl355_reset(ADXL355_HANDLER * handler, ADXL355Command * cmd);
+int adxl355_get_status(ADXL355_HANDLER * handler, ADXL355Status * status);
+int adxl355_get_fifo_entries(ADXL355_HANDLER * handler, uint8_t * b);
+int adxl355_get_status_n_fifo(ADXL355_HANDLER * handler, ADXL355StatusAndFifo * status);
+int adxl355_read_temperature(ADXL355_HANDLER * handler, ADXL355Temperature * temp);
+int adxl355_read_acceleration(ADXL355_HANDLER * handler, ADXL355Acceleration * acc);
+int adxl355_read_fifo(ADXL355_HANDLER * handler, ADXL355Fifo * fifo, uint8_t entries_count);
+int adxl355_fifo_stream(ADXL355_HANDLER * handler, void (* callback)(ADXL355Fifo * fifo), uint8_t flags);
+int adxl355_measurement_mode(ADXL355_HANDLER * handler);
+int adxl355_standby_mode(ADXL355_HANDLER * handler);
+int adxl355_get_power_ctl(ADXL355_HANDLER * handler, uint8_t * b);
+int adxl355_reset(ADXL355_HANDLER * handler);
 
 #endif /* ADXL355_H_ */
