@@ -231,7 +231,8 @@ adxl355_read_fifo(ADXL355_HANDLER * handler, ADXL355Fifo * fifo, uint8_t entries
 
   uint8_t remainder;
 
-  if (remainder = entries_count % 3){
+  if (entries_count % 3){
+    remainder = entries_count % 3;
     entries_count -= remainder;
   }
 
